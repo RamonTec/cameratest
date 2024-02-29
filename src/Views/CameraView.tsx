@@ -1,4 +1,4 @@
-import React, {useRef, useState, useCallback, useMemo} from 'react';
+import React, {useRef, useState, useCallback, useMemo, useEffect} from 'react';
 import {
   View,
   TouchableOpacity,
@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import {
   Camera,
+  CameraProps,
   PhotoFile,
   TakePhotoOptions,
   useCameraDevice,
@@ -21,8 +22,15 @@ import RNFS from 'react-native-fs';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {CameraRoll} from '@react-native-camera-roll/camera-roll';
 import Video from 'react-native-video';
-import Animated, {ZoomIn, ZoomOut} from 'react-native-reanimated';
+import Animated, {Extrapolation, ZoomIn, ZoomOut, interpolate} from 'react-native-reanimated';
 import { ModalComponent } from '../Components/Modal';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler'
+import Reanimated, { useAnimatedProps, useSharedValue } from 'react-native-reanimated'
+
+Reanimated.addWhitelistedNativeProps({
+  zoom: true,
+})
+const ReanimatedCamera = Reanimated.createAnimatedComponent(Camera);
 
 const CameraComponent = () => {
   const [photo, setPhoto] = useState<PhotoFile>(null);
@@ -164,26 +172,50 @@ const CameraComponent = () => {
     seModalFps(!modalFps);
   }
 
+  const zoom = useSharedValue(device.neutralZoom)
+  const zoomOffset = useSharedValue(0);
+  const gesture = Gesture.Pinch()
+    .onBegin(() => {
+      zoomOffset.value = zoom.value
+    })
+    .onUpdate(event => {
+      const z = zoomOffset.value * event.scale;
+      zoom.value = interpolate(
+        z,
+        [1, 10],
+        [device.minZoom, device.maxZoom],
+        Extrapolation.CLAMP,
+      )
+    });
+
+    const animatedProps = useAnimatedProps<CameraProps>(
+      () => ({ zoom: zoom.value }),
+      [zoom]
+    );
+
   if (!device) {
     return <Text style={{color: 'black'}}>Camera device not found</Text>;
   }
 
   return (
     <View style={{flex: 1}}>
-      <Camera
-        ref={camera}
-        style={Styles.Camera}
-        device={device}
-        isActive={isActive}
-        photo
-        video
-        audio
-        videoHdr={hdrEnabled}
-        zoom={zoomLevel}
-        photoHdr={hdrEnabled}
-        format={format}
-        fps={handleFps}
-      />
+      <GestureDetector gesture={gesture}>
+        <ReanimatedCamera
+          ref={camera}
+          style={Styles.Camera}
+          device={device}
+          isActive={isActive}
+          photo
+          video
+          audio
+          videoHdr={hdrEnabled}
+          zoom={zoom}
+          photoHdr={hdrEnabled}
+          format={format}
+          fps={handleFps}
+          animatedProps={animatedProps}
+        />
+      </GestureDetector>
 
       <View
         style={Styles.stylesActionTop}>
@@ -242,7 +274,7 @@ const CameraComponent = () => {
 
       <View style={Styles.viewZoom}>
         <TouchableOpacity onPress={() => handleZoom(0)} style={Styles.zoomButton}>
-          <Text style={Styles.buttonText}>0x</Text>
+          <Text style={Styles.buttonText}> {zoom.value} </Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => handleZoom(5)} style={Styles.zoomButton}>
           <Text style={Styles.buttonText}>5x</Text>
